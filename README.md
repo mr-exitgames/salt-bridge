@@ -113,6 +113,48 @@ salt-bridge/
 └── requirements.txt
 ```
 
+## Git repository
+
+The canonical repo lives on the `git` qube at `~/repos/salt-bridge.git`, accessed via SSH over `qubes.ConnectTCP` qrexec (no network routing required).
+
+### Initial clone (from any VM with access)
+
+First, ensure the VM has a `qubes.ConnectTCP` policy allowing port 22 to the `git` VM, and an SSH key authorized on the `git` user. Then:
+
+```bash
+# ~/.ssh/config
+Host git
+    User git
+    IdentityFile ~/.ssh/id_ed25519_git
+    ProxyCommand qrexec-client-vm git qubes.ConnectTCP+22
+    StrictHostKeyChecking accept-new
+```
+
+```bash
+git clone git@git:repos/salt-bridge.git
+```
+
+### Day-to-day workflow
+
+```bash
+git pull origin master          # pull latest
+# ... make changes ...
+git add -A && git commit -m "description of changes"
+git push origin master          # push to git qube
+```
+
+### After changing dom0 services
+
+Changes to `server.py`, qrexec scripts, or policy templates don't take effect until reinstalled. After pushing:
+
+```bash
+# Re-run the dom0 installer (two-step):
+qvm-run -p <salt-bridge-vm> 'cat /home/user/salt-bridge/dom0-install.sh' > /tmp/sb-install.sh
+bash /tmp/sb-install.sh <salt-bridge-vm>
+
+# Then restart Claude Code to reload the MCP server
+```
+
 ## Related projects
 
 - **[Calcium Channel](../calcium-channel)** — Least-privilege MCP-over-qrexec mesh. Routes MCP server connections between isolated VMs with per-server ACLs. Unlike Salt Bridge, Calcium Channel *strengthens* Qubes isolation rather than bypassing it.
