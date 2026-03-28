@@ -6,5 +6,6 @@ saltbridge.VmStart     *  CLAUDE_VM  @adminvm  allow
 saltbridge.VmShutdown  *  CLAUDE_VM  @adminvm  allow
 saltbridge.VmNetworkInfo *  CLAUDE_VM  @adminvm  allow
 saltbridge.VmExec      *  CLAUDE_VM  @adminvm  allow
+saltbridge.VmExecRoot  *  CLAUDE_VM  @adminvm  allow
 saltbridge.VmReadFile  *  CLAUDE_VM  @adminvm  allow
 saltbridge.VmWriteFile *  CLAUDE_VM  @adminvm  allow

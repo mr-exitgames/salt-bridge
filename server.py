@@ -64,9 +64,16 @@ def vm_network_info(vm_name: str) -> str:
 
 @mcp.tool()
 def exec_in_vm(vm_name: str, command: str, timeout_seconds: int = 30) -> str:
-    """Execute a shell command in a target VM. Returns combined stdout/stderr."""
+    """Execute a shell command in a target VM as the default user. Returns combined stdout/stderr."""
     payload = json.dumps({"vm": vm_name, "cmd": command})
     return call_dom0("saltbridge.VmExec", payload, timeout=timeout_seconds + 5)
+
+
+@mcp.tool()
+def exec_in_vm_root(vm_name: str, command: str, timeout_seconds: int = 30) -> str:
+    """Execute a shell command in a target VM as root. Use for template VMs or when sudo is unavailable."""
+    payload = json.dumps({"vm": vm_name, "cmd": command})
+    return call_dom0("saltbridge.VmExecRoot", payload, timeout=timeout_seconds + 5)
 
 
 @mcp.tool()
