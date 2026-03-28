@@ -1,0 +1,34 @@
+#!/bin/bash
+read -r vm_name
+if [[ ! "$vm_name" =~ ^[a-zA-Z][a-zA-Z0-9_-]*$ ]]; then
+    echo "ERROR: Invalid VM name: '$vm_name'" >&2
+    exit 1
+fi
+
+echo "=== Qubes Properties ==="
+for prop in netvm ip visible_ip dns provides_network; do
+    val=$(qvm-prefs "$vm_name" "$prop" 2>&1)
+    echo "$prop: $val"
+done
+
+echo ""
+echo "=== In-VM Network State ==="
+qvm-run -p "$vm_name" '
+echo "--- Interfaces ---"
+ip -4 addr show 2>&1
+echo ""
+echo "--- Routes ---"
+ip route show 2>&1
+echo ""
+echo "--- DNS ---"
+cat /etc/resolv.conf 2>&1
+echo ""
+echo "--- WireGuard ---"
+sudo wg show 2>/dev/null || echo "No WireGuard interfaces or wg not installed"
+echo ""
+echo "--- iptables (nat) ---"
+sudo iptables -t nat -L -n 2>&1
+echo ""
+echo "--- iptables (filter) ---"
+sudo iptables -L -n 2>&1
+' 2>&1

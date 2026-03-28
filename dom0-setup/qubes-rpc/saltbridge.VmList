@@ -1,0 +1,2 @@
+#!/bin/bash
+exec qvm-ls --raw-data --fields=name,state,class,netvm,ip,label 2>&1

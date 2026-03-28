@@ -1,0 +1,7 @@
+#!/bin/bash
+read -r vm_name
+if [[ ! "$vm_name" =~ ^[a-zA-Z][a-zA-Z0-9_-]*$ ]]; then
+    echo "ERROR: Invalid VM name: '$vm_name'" >&2
+    exit 1
+fi
+qvm-shutdown --wait "$vm_name" 2>&1
