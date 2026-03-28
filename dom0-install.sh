@@ -21,7 +21,7 @@ mkdir -p /etc/qubes-rpc /etc/qubes/policy.d
 
 # Copy qrexec service scripts from claude-vm
 echo "[*] Copying qrexec services..."
-for svc in VmList VmStart VmShutdown VmNetworkInfo VmExec VmExecRoot VmReadFile VmWriteFile; do
+for svc in VmList VmStart VmShutdown VmNetworkInfo VmExec VmExecRoot VmReadFile VmWriteFile FirewallList FirewallAdd FirewallRemove ConnectTcpPolicy; do
     if qvm-run -p "$CLAUDE_VM" "cat /home/user/salt-bridge/dom0-setup/qubes-rpc/saltbridge.$svc" \
         > "/etc/qubes-rpc/saltbridge.$svc" 2>/dev/null; then
         chmod +x "/etc/qubes-rpc/saltbridge.$svc"

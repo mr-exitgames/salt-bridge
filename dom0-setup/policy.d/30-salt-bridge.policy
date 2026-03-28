@@ -9,3 +9,7 @@ saltbridge.VmExec      *  CLAUDE_VM  @adminvm  allow
 saltbridge.VmExecRoot  *  CLAUDE_VM  @adminvm  allow
 saltbridge.VmReadFile  *  CLAUDE_VM  @adminvm  allow
 saltbridge.VmWriteFile *  CLAUDE_VM  @adminvm  allow
+saltbridge.FirewallList *  CLAUDE_VM  @adminvm  allow
+saltbridge.FirewallAdd *  CLAUDE_VM  @adminvm  allow
+saltbridge.FirewallRemove *  CLAUDE_VM  @adminvm  allow
+saltbridge.ConnectTcpPolicy *  CLAUDE_VM  @adminvm  allow

@@ -1,0 +1,53 @@
+#!/bin/bash
+# Manage qubes.ConnectTCP policy rules
+# Payload: {"action": "add|remove|list", "source": "vm", "target": "vm", "port": 22}
+read -r payload
+action=$(echo "$payload" | python3 -c "import sys,json; print(json.load(sys.stdin)['action'])" 2>/dev/null)
+
+POLICY="/etc/qubes/policy.d/30-salt-bridge-tcp.policy"
+touch "$POLICY"
+
+if [[ "$action" == "list" ]]; then
+    cat "$POLICY"
+    exit 0
+fi
+
+source_vm=$(echo "$payload" | python3 -c "import sys,json; print(json.load(sys.stdin)['source'])" 2>/dev/null)
+target_vm=$(echo "$payload" | python3 -c "import sys,json; print(json.load(sys.stdin)['target'])" 2>/dev/null)
+port=$(echo "$payload" | python3 -c "import sys,json; print(json.load(sys.stdin)['port'])" 2>/dev/null)
+
+if [[ -z "$source_vm" || -z "$target_vm" || -z "$port" ]]; then
+    echo "ERROR: payload must include 'source', 'target', and 'port'" >&2
+    exit 1
+fi
+for name in "$source_vm" "$target_vm"; do
+    if [[ ! "$name" =~ ^[a-zA-Z@][a-zA-Z0-9_-]*$ ]]; then
+        echo "ERROR: Invalid VM name: '$name'" >&2
+        exit 1
+    fi
+done
+if [[ ! "$port" =~ ^[0-9]+$ ]] || (( port < 1 || port > 65535 )); then
+    echo "ERROR: port must be 1-65535" >&2
+    exit 1
+fi
+
+RULE="qubes.ConnectTCP +${port}  ${source_vm}  ${target_vm}  allow"
+
+if [[ "$action" == "add" ]]; then
+    if grep -qF "$RULE" "$POLICY" 2>/dev/null; then
+        echo "Rule already exists"
+    else
+        echo "$RULE" >> "$POLICY"
+        echo "OK: Added $RULE"
+    fi
+elif [[ "$action" == "remove" ]]; then
+    if grep -qF "$RULE" "$POLICY" 2>/dev/null; then
+        grep -vF "$RULE" "$POLICY" > "${POLICY}.tmp" && mv "${POLICY}.tmp" "$POLICY"
+        echo "OK: Removed rule"
+    else
+        echo "Rule not found"
+    fi
+else
+    echo "ERROR: action must be 'add', 'remove', or 'list'" >&2
+    exit 1
+fi

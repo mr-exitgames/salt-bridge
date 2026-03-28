@@ -90,5 +90,32 @@ def write_file_in_vm(vm_name: str, file_path: str, content: str) -> str:
     return call_dom0("saltbridge.VmWriteFile", payload)
 
 
+@mcp.tool()
+def firewall_list(vm_name: str) -> str:
+    """List all firewall rules for a VM."""
+    return call_dom0("saltbridge.FirewallList", vm_name)
+
+
+@mcp.tool()
+def firewall_add(vm_name: str, action: str, args: str = "") -> str:
+    """Add a firewall rule to a VM. Action is 'accept' or 'drop'. Args are qvm-firewall parameters like 'dsthost=10.137.0.20 proto=tcp dstports=22'."""
+    payload = json.dumps({"vm": vm_name, "action": action, "args": args})
+    return call_dom0("saltbridge.FirewallAdd", payload)
+
+
+@mcp.tool()
+def firewall_remove(vm_name: str, rule_number: int) -> str:
+    """Remove a firewall rule from a VM by rule number. Use firewall_list to see rule numbers."""
+    payload = json.dumps({"vm": vm_name, "rule_number": rule_number})
+    return call_dom0("saltbridge.FirewallRemove", payload)
+
+
+@mcp.tool()
+def connect_tcp_policy(action: str, source: str = "", target: str = "", port: int = 0) -> str:
+    """Manage qubes.ConnectTCP qrexec policy rules. Action: 'list', 'add', or 'remove'. For add/remove, specify source VM, target VM, and port."""
+    payload = json.dumps({"action": action, "source": source, "target": target, "port": port})
+    return call_dom0("saltbridge.ConnectTcpPolicy", payload)
+
+
 if __name__ == "__main__":
     mcp.run()
