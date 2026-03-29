@@ -16,6 +16,21 @@ exec_in_vm runs commands as the default user in the target VM.
 QREXEC_TARGET = "dom0"
 TIMEOUT = 30
 
+# The MCP server runs inside this VM — targeting it via qrexec is unnecessary
+# and creates confusing self-referential loops. Use local tools (Read, Grep,
+# Bash, etc.) instead when operating on salt-bridge itself.
+_SELF_VM = "salt-bridge"
+
+
+def _reject_self(vm_name: str, tool: str) -> str | None:
+    """Return an error string if vm_name targets the MCP server's own VM."""
+    if vm_name.lower() == _SELF_VM:
+        return (
+            f"ERROR: {tool} cannot target '{_SELF_VM}' — that is the VM this MCP "
+            "server runs in. Use local tools (Read, Write, Bash, Grep, Glob) directly."
+        )
+    return None
+
 
 def call_dom0(service: str, input_data: str = "", timeout: int = TIMEOUT) -> str:
     """Call a qrexec service in dom0."""
@@ -65,6 +80,8 @@ def vm_network_info(vm_name: str) -> str:
 @mcp.tool()
 def exec_in_vm(vm_name: str, command: str, timeout_seconds: int = 30) -> str:
     """Execute a shell command in a target VM as the default user. Returns combined stdout/stderr."""
+    if err := _reject_self(vm_name, "exec_in_vm"):
+        return err
     payload = json.dumps({"vm": vm_name, "cmd": command})
     return call_dom0("saltbridge.VmExec", payload, timeout=timeout_seconds + 5)
 
@@ -72,6 +89,8 @@ def exec_in_vm(vm_name: str, command: str, timeout_seconds: int = 30) -> str:
 @mcp.tool()
 def exec_in_vm_root(vm_name: str, command: str, timeout_seconds: int = 30) -> str:
     """Execute a shell command in a target VM as root. Use for template VMs or when sudo is unavailable."""
+    if err := _reject_self(vm_name, "exec_in_vm_root"):
+        return err
     payload = json.dumps({"vm": vm_name, "cmd": command})
     return call_dom0("saltbridge.VmExecRoot", payload, timeout=timeout_seconds + 5)
 
@@ -79,6 +98,8 @@ def exec_in_vm_root(vm_name: str, command: str, timeout_seconds: int = 30) -> st
 @mcp.tool()
 def read_file_in_vm(vm_name: str, file_path: str) -> str:
     """Read a file from a target VM."""
+    if err := _reject_self(vm_name, "read_file_in_vm"):
+        return err
     payload = json.dumps({"vm": vm_name, "path": file_path})
     return call_dom0("saltbridge.VmReadFile", payload)
 
@@ -86,6 +107,8 @@ def read_file_in_vm(vm_name: str, file_path: str) -> str:
 @mcp.tool()
 def write_file_in_vm(vm_name: str, file_path: str, content: str) -> str:
     """Write content to a file in a target VM. Creates parent directories if needed."""
+    if err := _reject_self(vm_name, "write_file_in_vm"):
+        return err
     payload = json.dumps({"vm": vm_name, "path": file_path, "content": content})
     return call_dom0("saltbridge.VmWriteFile", payload)
 

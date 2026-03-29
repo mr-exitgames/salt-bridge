@@ -11,7 +11,8 @@ This is the Salt Bridge MCP server for Qubes OS. It runs in a dedicated, privile
 
 ## Key constraints
 
-- `exec_in_vm`, `read_file_in_vm`, `write_file_in_vm` all block `dom0` / `@adminvm` as a target. Do not remove this guard.
+- `exec_in_vm`, `exec_in_vm_root`, `read_file_in_vm`, `write_file_in_vm` all block `dom0` / `@adminvm` as a target (enforced in dom0 service scripts). Do not remove this guard.
+- The same tools also block `salt-bridge` itself as a target (enforced in `server.py` via `_reject_self`). When operating on salt-bridge, use local tools (Read, Write, Bash, Grep, Glob) directly — no qrexec needed.
 - VM names are validated with `^[a-zA-Z][a-zA-Z0-9_-]*$` in every dom0 service script.
 - The MCP server depends on `mcp[cli]>=1.0.0` (Python).
 - Qubes minimal template VMs lack `sudo` — use `exec_in_vm_root` (which calls `qvm-run -u root`) for those.
