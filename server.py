@@ -17,6 +17,9 @@ exec_in_vm runs commands as the default user in the target VM.
 IMPORTANT constraints:
 - exec_in_vm, exec_in_vm_root, read_file_in_vm, and write_file_in_vm do NOT work on dom0/adminvm — the qrexec policy blocks it. Do not attempt to target dom0 with these tools.
 - These tools also cannot target 'salt-bridge' itself. Use local tools (Read, Write, Bash, Grep, Glob) for files in this VM.
+
+Dom0 policy management:
+- connect_tcp_policy can add/remove/list qubes.ConnectTCP rules in dom0. Use it when a VM needs TCP access to another VM via qrexec (e.g. SSH through qrexec-client-vm). This is the correct tool for managing those rules — do not ask the user to edit dom0 policy files manually.
 """)
 
 QREXEC_TARGET = "dom0"

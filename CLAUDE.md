@@ -17,6 +17,35 @@ This is the Salt Bridge MCP server for Qubes OS. It runs in a dedicated, privile
 - The MCP server depends on `mcp[cli]>=1.0.0` (Python).
 - Qubes minimal template VMs lack `sudo` — use `exec_in_vm_root` (which calls `qvm-run -u root`) for those.
 
+## Dom0 policy management
+
+- `connect_tcp_policy` (action: list/add/remove) manages `qubes.ConnectTCP` rules in dom0's `30-salt-bridge-tcp.policy`. Use it whenever a VM needs to reach another VM via qrexec TCP tunneling (e.g. SSH via `ProxyCommand qrexec-client-vm <target> qubes.ConnectTCP+<port>`). Do not ask the user to edit dom0 policy files manually — this tool handles it.
+
+## Calcium Channel integration
+
+Salt Bridge is the **admin VM** for Calcium Channel (`~/calcium-channel`). It has qrexec policy rights to call `calciumchannel.McpList` and `calciumchannel.McpRegister` in dom0 — but this is admin access only, not client access. McpList called from salt-bridge returns only servers that salt-bridge is explicitly allowed to use as a client, which may be empty.
+
+**To list all registered servers** (from a client VM's perspective):
+```bash
+qvm-run -p work 'qrexec-client-vm dom0 calciumchannel.McpList'
+```
+Or call McpList directly from any VM that has client access (e.g., `work`).
+
+**To register/update a server's allow list:**
+```bash
+echo '{"server":"name","mcp_vm":"target-vm","allow":["work","calcium"]}' \
+  | qrexec-client-vm dom0 calciumchannel.McpRegister
+```
+Note: McpRegister **replaces** the full allow list for that server — include all VMs that should retain access.
+
+**To update ~/.mcp.json on any VM** (after policy changes):
+```bash
+bash ~/calcium-channel/client-gen.sh   # run inside the target VM
+```
+client-gen.sh adds, updates, and prunes calcium-channel entries in one pass. Re-run it after any policy change.
+
+The calcium-channel dispatcher is installed on the `calcium` VM. `~/calcium-channel/admin-mcp.py.bak` is a stale experiment — do not use it.
+
 ## Development
 
 - The git remote is `git@git:repos/salt-bridge.git` via SSH over `qubes.ConnectTCP` qrexec.
