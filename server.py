@@ -3,6 +3,8 @@
 
 import json
 import subprocess
+import threading
+import time
 from mcp.server.fastmcp import FastMCP
 
 mcp = FastMCP("salt-bridge", instructions="""
@@ -15,6 +17,7 @@ exec_in_vm runs commands as the default user in the target VM.
 
 QREXEC_TARGET = "dom0"
 TIMEOUT = 30
+MAX_OUTPUT = 2 * 1024 * 1024  # 2MB cap — prevents OOM from large command output
 
 # The MCP server runs inside this VM — targeting it via qrexec is unnecessary
 # and creates confusing self-referential loops. Use local tools (Read, Grep,
@@ -35,21 +38,60 @@ def _reject_self(vm_name: str, tool: str) -> str | None:
 def call_dom0(service: str, input_data: str = "", timeout: int = TIMEOUT) -> str:
     """Call a qrexec service in dom0."""
     try:
-        result = subprocess.run(
+        proc = subprocess.Popen(
             ["qrexec-client-vm", QREXEC_TARGET, service],
-            input=input_data,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
         )
-    except subprocess.TimeoutExpired:
-        return f"ERROR: Command timed out after {timeout}s"
+    except Exception as e:
+        return f"ERROR: {e}"
 
-    output = result.stdout
-    if result.stderr:
-        output += f"\nSTDERR: {result.stderr}"
-    if result.returncode != 0:
-        output += f"\nEXIT CODE: {result.returncode}"
+    stderr_buf: list[bytes] = []
+    threading.Thread(target=lambda: stderr_buf.append(proc.stderr.read()), daemon=True).start()
+
+    if input_data:
+        proc.stdin.write(input_data.encode())
+    proc.stdin.close()
+
+    chunks: list[bytes] = []
+    total = 0
+    truncated = False
+    deadline = time.monotonic() + timeout
+    try:
+        while True:
+            if time.monotonic() > deadline:
+                proc.kill()
+                return f"ERROR: Command timed out after {timeout}s"
+            chunk = proc.stdout.read(65536)
+            if not chunk:
+                break
+            if total + len(chunk) > MAX_OUTPUT:
+                chunks.append(chunk[:MAX_OUTPUT - total])
+                truncated = True
+                proc.kill()
+                break
+            chunks.append(chunk)
+            total += len(chunk)
+    finally:
+        proc.stdout.close()
+
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+
+    stdout = b"".join(chunks).decode(errors="replace")
+    stderr = (stderr_buf[0] if stderr_buf else b"").decode(errors="replace")
+
+    if truncated:
+        stdout += f"\n[TRUNCATED: output exceeded {MAX_OUTPUT // 1024}KB — pipe to a file or filter the command]"
+
+    output = stdout
+    if stderr:
+        output += f"\nSTDERR: {stderr}"
+    if (rc := proc.returncode) is not None and rc not in (0, -9):
+        output += f"\nEXIT CODE: {rc}"
     return output
 
 
