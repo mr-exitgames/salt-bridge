@@ -13,6 +13,10 @@ Use list_vms to discover the VM topology before taking action.
 VM names are strict — always verify with list_vms first.
 For network debugging, vm_network_info gives you IPs, routes, DNS, and WireGuard status.
 exec_in_vm runs commands as the default user in the target VM.
+
+IMPORTANT constraints:
+- exec_in_vm, exec_in_vm_root, read_file_in_vm, and write_file_in_vm do NOT work on dom0/adminvm — the qrexec policy blocks it. Do not attempt to target dom0 with these tools.
+- These tools also cannot target 'salt-bridge' itself. Use local tools (Read, Write, Bash, Grep, Glob) for files in this VM.
 """)
 
 QREXEC_TARGET = "dom0"
@@ -121,7 +125,7 @@ def vm_network_info(vm_name: str) -> str:
 
 @mcp.tool()
 def exec_in_vm(vm_name: str, command: str, timeout_seconds: int = 30) -> str:
-    """Execute a shell command in a target VM as the default user. Returns combined stdout/stderr."""
+    """Execute a shell command in a target VM as the default user. Returns combined stdout/stderr. dom0 is not a valid target — the policy blocks it."""
     if err := _reject_self(vm_name, "exec_in_vm"):
         return err
     payload = json.dumps({"vm": vm_name, "cmd": command})
@@ -130,7 +134,7 @@ def exec_in_vm(vm_name: str, command: str, timeout_seconds: int = 30) -> str:
 
 @mcp.tool()
 def exec_in_vm_root(vm_name: str, command: str, timeout_seconds: int = 30) -> str:
-    """Execute a shell command in a target VM as root. Use for template VMs or when sudo is unavailable."""
+    """Execute a shell command in a target VM as root. Use for template VMs or when sudo is unavailable. dom0 is not a valid target — the policy blocks it."""
     if err := _reject_self(vm_name, "exec_in_vm_root"):
         return err
     payload = json.dumps({"vm": vm_name, "cmd": command})
@@ -139,7 +143,7 @@ def exec_in_vm_root(vm_name: str, command: str, timeout_seconds: int = 30) -> st
 
 @mcp.tool()
 def read_file_in_vm(vm_name: str, file_path: str) -> str:
-    """Read a file from a target VM."""
+    """Read a file from a target VM. dom0 is not a valid target — the policy blocks it."""
     if err := _reject_self(vm_name, "read_file_in_vm"):
         return err
     payload = json.dumps({"vm": vm_name, "path": file_path})
@@ -148,7 +152,7 @@ def read_file_in_vm(vm_name: str, file_path: str) -> str:
 
 @mcp.tool()
 def write_file_in_vm(vm_name: str, file_path: str, content: str) -> str:
-    """Write content to a file in a target VM. Creates parent directories if needed."""
+    """Write content to a file in a target VM. Creates parent directories if needed. dom0 is not a valid target — the policy blocks it."""
     if err := _reject_self(vm_name, "write_file_in_vm"):
         return err
     payload = json.dumps({"vm": vm_name, "path": file_path, "content": content})
