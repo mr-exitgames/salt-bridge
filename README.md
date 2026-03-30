@@ -2,8 +2,22 @@
 
 **An MCP server that gives [Claude Code](https://docs.anthropic.com/en/docs/claude-code) full cross-VM management of a [Qubes OS](https://www.qubes-os.org/) system — command execution, file I/O, firewall rules, and network policy — all through dom0 qrexec.**
 
-> [!WARNING]
-> Salt Bridge grants near-dom0-level access to a single AppVM. Any compromise of that VM effectively compromises your entire Qubes system. **Use a dedicated, minimal, network-isolated AppVM.**
+> [!CAUTION]
+> ## This tool fundamentally breaks the Qubes OS security model.
+>
+> Qubes OS achieves security through **isolation** — each VM is a compartment, and no single VM can reach into another. Salt Bridge **deliberately removes that boundary** by granting one VM the ability to execute commands, read/write files, and modify firewall rules across *every other VM on the system*.
+>
+> **What this means in practice:**
+> - A single compromised VM (the salt-bridge AppVM) = full compromise of every VM on the machine
+> - Any MCP client bug, prompt injection, or supply-chain attack in that VM has dom0-equivalent reach
+> - The qrexec policy grants blanket `allow` — there are no per-VM or per-command prompts
+>
+> **Salt Bridge is a development and administration tool.** It is designed for:
+> - Qubes development machines where you are building/testing Qubes itself
+> - Lab and experimentation environments
+> - Machines where convenience outweighs compartmentalization
+>
+> **Do NOT install Salt Bridge on a Qubes system that holds sensitive data** — personal credentials, private keys, confidential documents, cryptocurrency wallets, or anything you rely on Qubes isolation to protect. If you need AI-assisted cross-VM tooling *with* isolation guarantees, see [Calcium Channel](https://github.com/mr-exitgames/calcium-channel) — a least-privilege MCP-over-qrexec mesh that routes MCP connections between isolated VMs with per-server ACLs, strengthening Qubes isolation rather than bypassing it.
 
 ## How It Works
 
