@@ -166,7 +166,7 @@ salt-bridge/
         ├── saltbridge.VmStart             # qvm-start wrapper
         ├── saltbridge.VmShutdown          # qvm-shutdown wrapper
         ├── saltbridge.VmNetworkInfo       # Network diagnostics
-        ├── saltbridge.VmExec             # Command exec (user)
+        ├── saltbridge.VmExec              # Command exec (user)
         ├── saltbridge.VmExecRoot          # Command exec (root)
         ├── saltbridge.VmReadFile          # File read via qvm-run
         ├── saltbridge.VmWriteFile         # File write via qvm-run
