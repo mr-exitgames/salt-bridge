@@ -26,19 +26,19 @@ Salt Bridge is an [MCP](https://modelcontextprotocol.io/) server that runs insid
 ```
                          qrexec boundary
                               │
-  ┌─────────────────┐        │        ┌──────────┐       ┌──────────────┐
+  ┌──────────────────┐        │        ┌──────────┐       ┌──────────────┐
   │  salt-bridge VM  │        │        │   dom0   │       │  target VMs  │
   │                  │        │        │          │       │              │
   │  Claude Code     │        │        │          │       │  ┌────────┐  │
   │    │             │        │        │          │       │  │ work   │  │
   │    ▼             │        │        │          │       │  └────────┘  │
-  │  MCP Server ─────────qrexec──────▶ Service ──────▶   │  ┌────────┐  │
+  │  MCP Server ─────────qrexec──────▶ Service ──────▶    │  ┌────────┐  │
   │  (server.py)     │        │        │ Scripts  │       │  │ vault  │  │
   │    ▲             │        │        │          │       │  └────────┘  │
   │    │             │        │        │ qvm-run  │       │  ┌────────┐  │
-  │  Tool Result ◄───────────────────── qvm-fw   │◄──────│  │ dev    │  │
+  │  Tool Result ◄───────────────────── qvm-fw    │◄──────│  │ dev    │  │
   │                  │        │        │ qvm-ls   │       │  └────────┘  │
-  └─────────────────┘        │        └──────────┘       └──────────────┘
+  └──────────────────┘        │        └──────────┘       └──────────────┘
                               │
 ```
 
@@ -71,24 +71,24 @@ Salt Bridge is an [MCP](https://modelcontextprotocol.io/) server that runs insid
 
 ```
   ┌─────────────────────────────────────────────────────┐
-  │                    SECURITY LAYERS                   │
+  │                    SECURITY LAYERS                  │
   ├─────────────────────────────────────────────────────┤
   │                                                     │
   │  1. Qrexec Policy (dom0)                            │
-  │     Only the named VM can call saltbridge.* services │
+  │     Only the named VM can call saltbridge.* services│
   │                                                     │
   │  2. Target Blocking (dom0 + server.py)              │
-  │     dom0 and the salt-bridge VM itself are           │
-  │     rejected as targets for exec/read/write          │
+  │     dom0 and the salt-bridge VM itself are          │
+  │     rejected as targets for exec/read/write         │
   │                                                     │
   │  3. Input Validation (dom0 service scripts)         │
-  │     VM names: ^[a-zA-Z][a-zA-Z0-9_-]*$             │
-  │     Firewall args: ^[a-zA-Z0-9=\.:/\ -]+$          │
+  │     VM names: ^[a-zA-Z][a-zA-Z0-9_-]*$              │
+  │     Firewall args: ^[a-zA-Z0-9=\.:/\ -]+$           │
   │     Ports: integer 1–65535                          │
   │                                                     │
   │  4. Resource Limits (server.py)                     │
   │     Output capped at 2 MB (prevents OOM)            │
-  │     30-second timeout per command                    │
+  │     30-second timeout per command                   │
   │                                                     │
   └─────────────────────────────────────────────────────┘
 ```
