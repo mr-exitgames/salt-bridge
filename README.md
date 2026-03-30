@@ -1,63 +1,108 @@
 # Salt Bridge
 
-A privileged MCP server for managing Qubes OS systems from Claude Code. Provides cross-VM command execution, file operations, firewall management, and TCP port forwarding policy — all mediated through dom0 qrexec services.
+**An MCP server that gives [Claude Code](https://docs.anthropic.com/en/docs/claude-code) full cross-VM management of a [Qubes OS](https://www.qubes-os.org/) system — command execution, file I/O, firewall rules, and network policy — all through dom0 qrexec.**
 
-> **Warning:** Salt Bridge grants near-dom0-level access to a single VM. Any compromise of that VM effectively compromises your entire Qubes system. Use a dedicated, minimal AppVM.
+> [!WARNING]
+> Salt Bridge grants near-dom0-level access to a single AppVM. Any compromise of that VM effectively compromises your entire Qubes system. **Use a dedicated, minimal, network-isolated AppVM.**
 
-## How it works
+## How It Works
+
+Salt Bridge is an [MCP](https://modelcontextprotocol.io/) server that runs inside a dedicated Qubes VM. Claude Code connects to it like any MCP server, and each tool call crosses the Qubes security boundary via qrexec — the same mechanism Qubes itself uses for inter-VM communication.
 
 ```
-salt-bridge VM          dom0                    target VM
-─────────────           ────                    ─────────
-Claude Code             qrexec policy           AppVM/TemplateVM
-  │                       │                       │
-  ├─ MCP server ──►  qrexec service  ──►  qvm-run / qvm-firewall
-  │  (server.py)      (saltbridge.*)          executes command
-  │                       │                       │
-  ◄── structured ──── stdout/stderr ◄──── result piped back
-     tool result
+                         qrexec boundary
+                              │
+  ┌─────────────────┐        │        ┌──────────┐       ┌──────────────┐
+  │  salt-bridge VM  │        │        │   dom0   │       │  target VMs  │
+  │                  │        │        │          │       │              │
+  │  Claude Code     │        │        │          │       │  ┌────────┐  │
+  │    │             │        │        │          │       │  │ work   │  │
+  │    ▼             │        │        │          │       │  └────────┘  │
+  │  MCP Server ─────────qrexec──────▶ Service ──────▶   │  ┌────────┐  │
+  │  (server.py)     │        │        │ Scripts  │       │  │ vault  │  │
+  │    ▲             │        │        │          │       │  └────────┘  │
+  │    │             │        │        │ qvm-run  │       │  ┌────────┐  │
+  │  Tool Result ◄───────────────────── qvm-fw   │◄──────│  │ dev    │  │
+  │                  │        │        │ qvm-ls   │       │  └────────┘  │
+  └─────────────────┘        │        └──────────┘       └──────────────┘
+                              │
 ```
 
-The MCP server (`server.py`) runs in the Salt Bridge VM. Each tool call invokes `qrexec-client-vm dom0 saltbridge.<Service>`, which dom0's qrexec policy either allows or denies. The dom0 service scripts then execute `qvm-run`, `qvm-firewall`, etc. against the target VM.
+**The flow:**
+
+1. Claude Code invokes an MCP tool (e.g. `exec_in_vm`)
+2. `server.py` calls `qrexec-client-vm dom0 saltbridge.<Service>`
+3. Dom0 qrexec policy checks if the calling VM is authorized
+4. The dom0 service script runs the appropriate `qvm-*` command against the target
+5. Output streams back through qrexec to the MCP response
 
 ## MCP Tools
 
 | Tool | Description |
-|---|---|
-| `list_vms` | List all VMs with state, type, netvm, IP, label |
+|------|-------------|
+| `list_vms` | List all VMs with state, type, netvm, IP, and label |
 | `start_vm` | Start a VM |
 | `shutdown_vm` | Gracefully shut down a VM |
 | `vm_network_info` | IPs, routes, DNS, iptables, WireGuard status |
-| `exec_in_vm` | Run a command as the default user |
-| `exec_in_vm_root` | Run a command as root (for templates, minimal VMs) |
+| `exec_in_vm` | Run a shell command as the default user |
+| `exec_in_vm_root` | Run a shell command as root |
 | `read_file_in_vm` | Read a file from any VM |
-| `write_file_in_vm` | Write a file to any VM |
+| `write_file_in_vm` | Write a file to any VM (creates parent dirs) |
 | `firewall_list` | List qvm-firewall rules for a VM |
-| `firewall_add` | Add a firewall rule (accept/drop with dst/proto/port) |
+| `firewall_add` | Add a firewall rule (accept/drop) |
 | `firewall_remove` | Remove a firewall rule by number |
-| `connect_tcp_policy` | Manage qubes.ConnectTCP qrexec policy rules |
+| `connect_tcp_policy` | Manage `qubes.ConnectTCP` qrexec policy in dom0 |
 
-### Security restrictions
+## Security Model
 
-- `exec_in_vm`, `exec_in_vm_root`, `read_file_in_vm`, and `write_file_in_vm` refuse to target `dom0` / `@adminvm`.
-- Only the VM named in the dom0 policy can call any Salt Bridge service.
-- VM names are validated against `^[a-zA-Z][a-zA-Z0-9_-]*$`.
+```
+  ┌─────────────────────────────────────────────────────┐
+  │                    SECURITY LAYERS                   │
+  ├─────────────────────────────────────────────────────┤
+  │                                                     │
+  │  1. Qrexec Policy (dom0)                            │
+  │     Only the named VM can call saltbridge.* services │
+  │                                                     │
+  │  2. Target Blocking (dom0 + server.py)              │
+  │     dom0 and the salt-bridge VM itself are           │
+  │     rejected as targets for exec/read/write          │
+  │                                                     │
+  │  3. Input Validation (dom0 service scripts)         │
+  │     VM names: ^[a-zA-Z][a-zA-Z0-9_-]*$             │
+  │     Firewall args: ^[a-zA-Z0-9=\.:/\ -]+$          │
+  │     Ports: integer 1–65535                          │
+  │                                                     │
+  │  4. Resource Limits (server.py)                     │
+  │     Output capped at 2 MB (prevents OOM)            │
+  │     30-second timeout per command                    │
+  │                                                     │
+  └─────────────────────────────────────────────────────┘
+```
+
+- **dom0 is never a valid target** for `exec_in_vm`, `exec_in_vm_root`, `read_file_in_vm`, or `write_file_in_vm` — enforced in both the dom0 service scripts and `server.py`.
+- Only the VM explicitly named in the dom0 qrexec policy can invoke any Salt Bridge service. All other VMs are denied by default.
+- VM names are regex-validated in every dom0 service script to prevent injection.
 
 ## Installation
 
 ### Prerequisites
 
 - Qubes OS 4.x
-- Python 3 with `mcp[cli]>=1.0.0` in the Salt Bridge VM
-- A dedicated AppVM for Salt Bridge (recommended)
+- A dedicated AppVM for Salt Bridge (strongly recommended — isolate the privilege)
+- Python 3.10+ in the Salt Bridge VM
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed in the Salt Bridge VM
 
-### 1. Install in the Salt Bridge VM
+### Step 1: Set up the Salt Bridge VM
+
+Clone this repo and install dependencies:
 
 ```bash
-pip install --break-system-packages "mcp[cli]>=1.0.0"
+git clone https://github.com/mr-exitgames/salt-bridge.git ~/salt-bridge
+cd ~/salt-bridge
+pip install -r requirements.txt
 ```
 
-Add to `~/.mcp.json`:
+Add to `~/.mcp.json` (or your Claude Code MCP config):
 
 ```json
 {
@@ -70,91 +115,92 @@ Add to `~/.mcp.json`:
 }
 ```
 
-### 2. Install in dom0
+### Step 2: Install dom0 services
 
-Two-step process (piping directly causes stdin conflicts with `qvm-run`):
+Run in **dom0** (two-step process — piping directly causes stdin conflicts with `qvm-run`):
 
 ```bash
-qvm-run -p <salt-bridge-vm> 'cat /home/user/salt-bridge/dom0-install.sh' > /tmp/sb-install.sh
-bash /tmp/sb-install.sh <salt-bridge-vm>
+qvm-run -p salt-bridge 'cat ~/salt-bridge/dom0-install.sh' > /tmp/sb-install.sh
+bash /tmp/sb-install.sh salt-bridge
 ```
 
-The installer:
-- Copies all qrexec service scripts to `/etc/qubes-rpc/`
-- Creates `/etc/qubes/policy.d/30-salt-bridge.policy` granting access to the named VM
-- Supports adding multiple VMs by re-running (appends to existing policy)
+Replace `salt-bridge` with whatever you named your VM. The installer:
+- Copies all 12 qrexec service scripts to `/etc/qubes-rpc/`
+- Creates `/etc/qubes/policy.d/30-salt-bridge.policy` authorizing that VM
+- Can be re-run to add additional VMs or update services
 
-### 3. Restart Claude Code
+### Step 3: Restart Claude Code
 
-The MCP server starts automatically when Claude Code launches.
+The MCP server starts automatically when Claude Code launches. Verify with:
 
-## File structure
+```bash
+qrexec-client-vm dom0 saltbridge.VmList
+```
+
+## Project Structure
 
 ```
 salt-bridge/
-├── server.py                          # MCP server (runs in salt-bridge VM)
-├── dom0-install.sh                    # dom0 installer script
-├── dom0-setup/
-│   ├── policy.d/
-│   │   └── 30-salt-bridge.policy      # qrexec policy template
-│   └── qubes-rpc/
-│       ├── saltbridge.VmList          # qvm-ls wrapper
-│       ├── saltbridge.VmStart         # qvm-start wrapper
-│       ├── saltbridge.VmShutdown      # qvm-shutdown wrapper
-│       ├── saltbridge.VmNetworkInfo   # Network diagnostics
-│       ├── saltbridge.VmExec          # qvm-run (user)
-│       ├── saltbridge.VmExecRoot      # qvm-run -u root
-│       ├── saltbridge.VmReadFile      # Read file via qvm-run
-│       ├── saltbridge.VmWriteFile     # Write file via qvm-run
-│       ├── saltbridge.FirewallList    # qvm-firewall list
-│       ├── saltbridge.FirewallAdd     # qvm-firewall add
-│       ├── saltbridge.FirewallRemove  # qvm-firewall del
-│       └── saltbridge.ConnectTcpPolicy # Manage ConnectTCP rules
-└── requirements.txt
+├── server.py                              # MCP server (runs in salt-bridge VM)
+├── requirements.txt                       # Python dependencies
+├── dom0-install.sh                        # Dom0 installer (run in dom0)
+└── dom0-setup/
+    ├── policy.d/
+    │   └── 30-salt-bridge.policy          # Qrexec policy template
+    └── qubes-rpc/
+        ├── saltbridge.VmList              # qvm-ls wrapper
+        ├── saltbridge.VmStart             # qvm-start wrapper
+        ├── saltbridge.VmShutdown          # qvm-shutdown wrapper
+        ├── saltbridge.VmNetworkInfo       # Network diagnostics
+        ├── saltbridge.VmExec             # Command exec (user)
+        ├── saltbridge.VmExecRoot          # Command exec (root)
+        ├── saltbridge.VmReadFile          # File read via qvm-run
+        ├── saltbridge.VmWriteFile         # File write via qvm-run
+        ├── saltbridge.FirewallList        # Firewall listing
+        ├── saltbridge.FirewallAdd         # Firewall rule add
+        ├── saltbridge.FirewallRemove      # Firewall rule remove
+        └── saltbridge.ConnectTcpPolicy    # ConnectTCP policy mgmt
 ```
 
-## Git repository
+## Updating
 
-The canonical repo lives on the `git` qube at `~/repos/salt-bridge.git`, accessed via SSH over `qubes.ConnectTCP` qrexec (no network routing required).
-
-### Initial clone (from any VM with access)
-
-First, ensure the VM has a `qubes.ConnectTCP` policy allowing port 22 to the `git` VM, and an SSH key authorized on the `git` user. Then:
+After modifying qrexec services or policy, re-run the dom0 installer:
 
 ```bash
-# ~/.ssh/config
-Host git
-    User git
-    IdentityFile ~/.ssh/id_ed25519_git
-    ProxyCommand qrexec-client-vm git qubes.ConnectTCP+22
-    StrictHostKeyChecking accept-new
+# In dom0:
+qvm-run -p salt-bridge 'cat ~/salt-bridge/dom0-install.sh' > /tmp/sb-install.sh
+bash /tmp/sb-install.sh salt-bridge
 ```
 
-```bash
-git clone git@git:repos/salt-bridge.git
+After modifying `server.py`, restart Claude Code to reload the MCP server.
+
+## How Qrexec Policies Work
+
+For those unfamiliar with Qubes, qrexec is the inter-VM RPC system. Salt Bridge uses it like this:
+
+```
+  30-salt-bridge.policy (in dom0):
+  ┌────────────────────────────────────────────────────────┐
+  │ saltbridge.VmList  *  salt-bridge  @adminvm  allow     │
+  │ saltbridge.VmExec  *  salt-bridge  @adminvm  allow     │
+  │ saltbridge.VmStart *  salt-bridge  @adminvm  allow     │
+  │ ...                                                    │
+  └────────────────────────────────────────────────────────┘
+       │              │       │            │         │
+   service name    arg   source VM    target VM   action
+
+  Only "salt-bridge" VM can call these services.
+  All other VMs → denied by default.
 ```
 
-### Day-to-day workflow
+The `connect_tcp_policy` tool manages a separate policy file (`30-salt-bridge-tcp.policy`) for `qubes.ConnectTCP` rules, enabling TCP port forwarding between VMs without network routing.
 
-```bash
-git pull origin master          # pull latest
-# ... make changes ...
-git add -A && git commit -m "description of changes"
-git push origin master          # push to git qube
-```
+## License
 
-### After changing dom0 services
+MIT
 
-Changes to `server.py`, qrexec scripts, or policy templates don't take effect until reinstalled. After pushing:
+## Acknowledgments
 
-```bash
-# Re-run the dom0 installer (two-step):
-qvm-run -p <salt-bridge-vm> 'cat /home/user/salt-bridge/dom0-install.sh' > /tmp/sb-install.sh
-bash /tmp/sb-install.sh <salt-bridge-vm>
+Built by [Claude](https://claude.ai) (Anthropic) with guidance and vision from [@mr-exitgames](https://github.com/mr-exitgames).
 
-# Then restart Claude Code to reload the MCP server
-```
-
-## Related projects
-
-- **[Calcium Channel](../calcium-channel)** — Least-privilege MCP-over-qrexec mesh. Routes MCP server connections between isolated VMs with per-server ACLs. Unlike Salt Bridge, Calcium Channel *strengthens* Qubes isolation rather than bypassing it.
+Designed for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and the [Qubes OS](https://www.qubes-os.org/) security model.
