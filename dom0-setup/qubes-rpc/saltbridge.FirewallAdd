@@ -2,9 +2,9 @@
 # Add a firewall rule to a VM
 # Payload: {"vm": "name", "action": "accept|drop", "args": "dsthost=... proto=... dstports=..."}
 read -r payload
-vm_name=$(echo "$payload" | python3 -c "import sys,json; print(json.load(sys.stdin)['vm'])" 2>/dev/null)
-action=$(echo "$payload" | python3 -c "import sys,json; print(json.load(sys.stdin)['action'])" 2>/dev/null)
-args=$(echo "$payload" | python3 -c "import sys,json; print(json.load(sys.stdin).get('args', ''))" 2>/dev/null)
+vm_name=$(printf '%s\n' "$payload" | python3 -c "import sys,json; print(json.load(sys.stdin)['vm'])" 2>/dev/null)
+action=$(printf '%s\n' "$payload" | python3 -c "import sys,json; print(json.load(sys.stdin)['action'])" 2>/dev/null)
+args=$(printf '%s\n' "$payload" | python3 -c "import sys,json; print(json.load(sys.stdin).get('args', ''))" 2>/dev/null)
 
 if [[ -z "$vm_name" || -z "$action" ]]; then
     echo "ERROR: payload must include 'vm' and 'action'" >&2
@@ -12,6 +12,10 @@ if [[ -z "$vm_name" || -z "$action" ]]; then
 fi
 if [[ ! "$vm_name" =~ ^[a-zA-Z][a-zA-Z0-9_-]*$ ]]; then
     echo "ERROR: Invalid VM name: '$vm_name'" >&2
+    exit 1
+fi
+if [[ "$vm_name" == "dom0" || "$vm_name" == "@adminvm" ]]; then
+    echo "ERROR: targeting dom0 is not allowed" >&2
     exit 1
 fi
 if [[ "$action" != "accept" && "$action" != "drop" ]]; then
@@ -25,4 +29,4 @@ if [[ -n "$args" && ! "$args" =~ ^[a-zA-Z0-9=\.:/\ -]+$ ]]; then
     exit 1
 fi
 
-qvm-firewall "$vm_name" add "$action" $args 2>&1
+qvm-firewall "$vm_name" add "$action" -- $args 2>&1

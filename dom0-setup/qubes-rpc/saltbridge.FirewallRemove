@@ -2,8 +2,8 @@
 # Remove a firewall rule from a VM by rule number
 # Payload: {"vm": "name", "rule_number": 0}
 read -r payload
-vm_name=$(echo "$payload" | python3 -c "import sys,json; print(json.load(sys.stdin)['vm'])" 2>/dev/null)
-rule_num=$(echo "$payload" | python3 -c "import sys,json; print(json.load(sys.stdin)['rule_number'])" 2>/dev/null)
+vm_name=$(printf '%s\n' "$payload" | python3 -c "import sys,json; print(json.load(sys.stdin)['vm'])" 2>/dev/null)
+rule_num=$(printf '%s\n' "$payload" | python3 -c "import sys,json; print(json.load(sys.stdin)['rule_number'])" 2>/dev/null)
 
 if [[ -z "$vm_name" || -z "$rule_num" ]]; then
     echo "ERROR: payload must include 'vm' and 'rule_number'" >&2
@@ -11,6 +11,10 @@ if [[ -z "$vm_name" || -z "$rule_num" ]]; then
 fi
 if [[ ! "$vm_name" =~ ^[a-zA-Z][a-zA-Z0-9_-]*$ ]]; then
     echo "ERROR: Invalid VM name: '$vm_name'" >&2
+    exit 1
+fi
+if [[ "$vm_name" == "dom0" || "$vm_name" == "@adminvm" ]]; then
+    echo "ERROR: targeting dom0 is not allowed" >&2
     exit 1
 fi
 if [[ ! "$rule_num" =~ ^[0-9]+$ ]]; then

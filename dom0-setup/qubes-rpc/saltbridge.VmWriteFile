@@ -1,8 +1,8 @@
 #!/bin/bash
 read -r payload
-vm_name=$(echo "$payload" | python3 -c "import sys,json; print(json.load(sys.stdin)['vm'])" 2>/dev/null)
-file_path=$(echo "$payload" | python3 -c "import sys,json; print(json.load(sys.stdin)['path'])" 2>/dev/null)
-content=$(echo "$payload" | python3 -c "import sys,json; print(json.load(sys.stdin)['content'])" 2>/dev/null)
+vm_name=$(printf '%s\n' "$payload" | python3 -c "import sys,json; print(json.load(sys.stdin)['vm'])" 2>/dev/null)
+file_path=$(printf '%s\n' "$payload" | python3 -c "import sys,json; print(json.load(sys.stdin)['path'])" 2>/dev/null)
+content=$(printf '%s\n' "$payload" | python3 -c "import sys,json; print(json.load(sys.stdin)['content'])" 2>/dev/null)
 
 if [[ -z "$vm_name" || -z "$file_path" ]]; then
     echo "ERROR: Invalid payload. Expected JSON with 'vm', 'path', and 'content' keys." >&2
@@ -14,6 +14,10 @@ if [[ ! "$vm_name" =~ ^[a-zA-Z][a-zA-Z0-9_-]*$ ]]; then
 fi
 if [[ "$vm_name" == "dom0" || "$vm_name" == "@adminvm" ]]; then
     echo "ERROR: write in dom0 is not allowed" >&2
+    exit 1
+fi
+if [[ "$file_path" == *"'"* || "$file_path" == *'`'* || "$file_path" == *'$('* || "$file_path" == *$'\n'* ]]; then
+    echo "ERROR: file path contains disallowed characters" >&2
     exit 1
 fi
 

@@ -2,7 +2,7 @@
 # Manage qubes.ConnectTCP policy rules
 # Payload: {"action": "add|remove|list", "source": "vm", "target": "vm", "port": 22}
 read -r payload
-action=$(echo "$payload" | python3 -c "import sys,json; print(json.load(sys.stdin)['action'])" 2>/dev/null)
+action=$(printf '%s\n' "$payload" | python3 -c "import sys,json; print(json.load(sys.stdin)['action'])" 2>/dev/null)
 
 POLICY="/etc/qubes/policy.d/30-salt-bridge-tcp.policy"
 touch "$POLICY"
@@ -12,17 +12,17 @@ if [[ "$action" == "list" ]]; then
     exit 0
 fi
 
-source_vm=$(echo "$payload" | python3 -c "import sys,json; print(json.load(sys.stdin)['source'])" 2>/dev/null)
-target_vm=$(echo "$payload" | python3 -c "import sys,json; print(json.load(sys.stdin)['target'])" 2>/dev/null)
-port=$(echo "$payload" | python3 -c "import sys,json; print(json.load(sys.stdin)['port'])" 2>/dev/null)
+source_vm=$(printf '%s\n' "$payload" | python3 -c "import sys,json; print(json.load(sys.stdin)['source'])" 2>/dev/null)
+target_vm=$(printf '%s\n' "$payload" | python3 -c "import sys,json; print(json.load(sys.stdin)['target'])" 2>/dev/null)
+port=$(printf '%s\n' "$payload" | python3 -c "import sys,json; print(json.load(sys.stdin)['port'])" 2>/dev/null)
 
 if [[ -z "$source_vm" || -z "$target_vm" || -z "$port" ]]; then
     echo "ERROR: payload must include 'source', 'target', and 'port'" >&2
     exit 1
 fi
 for name in "$source_vm" "$target_vm"; do
-    if [[ ! "$name" =~ ^[a-zA-Z@][a-zA-Z0-9_-]*$ ]]; then
-        echo "ERROR: Invalid VM name: '$name'" >&2
+    if [[ ! "$name" =~ ^[a-zA-Z][a-zA-Z0-9_-]*$ ]]; then
+        echo "ERROR: Invalid VM name: '$name' (policy tokens like @anyvm not allowed)" >&2
         exit 1
     fi
 done

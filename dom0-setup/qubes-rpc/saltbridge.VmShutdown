@@ -4,4 +4,8 @@ if [[ ! "$vm_name" =~ ^[a-zA-Z][a-zA-Z0-9_-]*$ ]]; then
     echo "ERROR: Invalid VM name: '$vm_name'" >&2
     exit 1
 fi
+if [[ "$vm_name" == "dom0" || "$vm_name" == "@adminvm" ]]; then
+    echo "ERROR: targeting dom0 is not allowed" >&2
+    exit 1
+fi
 qvm-shutdown --wait "$vm_name" 2>&1
