@@ -2,6 +2,8 @@
 """Salt Bridge — Qubes OS MCP Server for cross-VM management."""
 
 import json
+import os
+import select
 import subprocess
 import threading
 import time
@@ -65,12 +67,17 @@ def call_dom0(service: str, input_data: str = "", timeout: int = TIMEOUT) -> str
     total = 0
     truncated = False
     deadline = time.monotonic() + timeout
+    stdout_fd = proc.stdout.fileno()
     try:
         while True:
-            if time.monotonic() > deadline:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
                 proc.kill()
                 return f"ERROR: Command timed out after {timeout}s"
-            chunk = proc.stdout.read(65536)
+            ready, _, _ = select.select([stdout_fd], [], [], min(remaining, 1.0))
+            if not ready:
+                continue  # select timed out — loop to recheck deadline
+            chunk = os.read(stdout_fd, 65536)
             if not chunk:
                 break
             if total + len(chunk) > MAX_OUTPUT:
