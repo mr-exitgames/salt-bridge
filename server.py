@@ -57,7 +57,13 @@ def call_dom0(service: str, input_data: str = "", timeout: int = TIMEOUT) -> str
         return f"ERROR: {e}"
 
     stderr_buf: list[bytes] = []
-    threading.Thread(target=lambda: stderr_buf.append(proc.stderr.read()), daemon=True).start()
+
+    def _read_stderr():
+        data = proc.stderr.read(MAX_OUTPUT)
+        stderr_buf.append(data)
+
+    stderr_thread = threading.Thread(target=_read_stderr, daemon=True)
+    stderr_thread.start()
 
     if input_data:
         proc.stdin.write(input_data.encode())
@@ -94,6 +100,8 @@ def call_dom0(service: str, input_data: str = "", timeout: int = TIMEOUT) -> str
         proc.wait(timeout=5)
     except subprocess.TimeoutExpired:
         proc.kill()
+
+    stderr_thread.join(timeout=2)
 
     stdout = b"".join(chunks).decode(errors="replace")
     stderr = (stderr_buf[0] if stderr_buf else b"").decode(errors="replace")
