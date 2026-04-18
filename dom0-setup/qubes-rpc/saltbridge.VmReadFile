@@ -1,18 +1,14 @@
 #!/bin/bash
+source /etc/qubes-rpc/saltbridge.lib.sh
+
+sb_require_vm_arg
+sb_check_allowlist "$SB_VM"
+
 read -r payload
-vm_name=$(printf '%s\n' "$payload" | python3 -c "import sys,json; print(json.load(sys.stdin)['vm'])" 2>/dev/null)
 file_path=$(printf '%s\n' "$payload" | python3 -c "import sys,json; print(json.load(sys.stdin)['path'])" 2>/dev/null)
 
-if [[ -z "$vm_name" || -z "$file_path" ]]; then
-    echo "ERROR: Invalid payload. Expected JSON with 'vm' and 'path' keys." >&2
-    exit 1
-fi
-if [[ ! "$vm_name" =~ ^[a-zA-Z][a-zA-Z0-9_-]*$ ]]; then
-    echo "ERROR: Invalid VM name: '$vm_name'" >&2
-    exit 1
-fi
-if [[ "$vm_name" == "dom0" || "$vm_name" == "@adminvm" ]]; then
-    echo "ERROR: read in dom0 is not allowed" >&2
+if [[ -z "$file_path" ]]; then
+    echo "ERROR: Invalid payload. Expected JSON with 'path' key." >&2
     exit 1
 fi
 if [[ "$file_path" == *"'"* || "$file_path" == *'`'* || "$file_path" == *'$('* || "$file_path" == *$'\n'* ]]; then
@@ -20,4 +16,4 @@ if [[ "$file_path" == *"'"* || "$file_path" == *'`'* || "$file_path" == *'$('* |
     exit 1
 fi
 
-qvm-run -p "$vm_name" "cat '$file_path'" 2>&1
+qvm-run -p "$SB_VM" "cat '$file_path'" 2>&1

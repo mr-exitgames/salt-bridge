@@ -1,20 +1,16 @@
 #!/bin/bash
 # Remove a firewall rule from a VM by rule number
-# Payload: {"vm": "name", "rule_number": 0}
+# Payload: {"rule_number": 0}
+source /etc/qubes-rpc/saltbridge.lib.sh
+
+sb_require_vm_arg
+sb_check_allowlist "$SB_VM"
+
 read -r payload
-vm_name=$(printf '%s\n' "$payload" | python3 -c "import sys,json; print(json.load(sys.stdin)['vm'])" 2>/dev/null)
 rule_num=$(printf '%s\n' "$payload" | python3 -c "import sys,json; print(json.load(sys.stdin)['rule_number'])" 2>/dev/null)
 
-if [[ -z "$vm_name" || -z "$rule_num" ]]; then
-    echo "ERROR: payload must include 'vm' and 'rule_number'" >&2
-    exit 1
-fi
-if [[ ! "$vm_name" =~ ^[a-zA-Z][a-zA-Z0-9_-]*$ ]]; then
-    echo "ERROR: Invalid VM name: '$vm_name'" >&2
-    exit 1
-fi
-if [[ "$vm_name" == "dom0" || "$vm_name" == "@adminvm" ]]; then
-    echo "ERROR: targeting dom0 is not allowed" >&2
+if [[ -z "$rule_num" ]]; then
+    echo "ERROR: payload must include 'rule_number'" >&2
     exit 1
 fi
 if [[ ! "$rule_num" =~ ^[0-9]+$ ]]; then
@@ -22,4 +18,4 @@ if [[ ! "$rule_num" =~ ^[0-9]+$ ]]; then
     exit 1
 fi
 
-qvm-firewall "$vm_name" del --rule-no "$rule_num" 2>&1
+qvm-firewall "$SB_VM" del --rule-no "$rule_num" 2>&1

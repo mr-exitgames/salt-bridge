@@ -3,6 +3,7 @@
 
 import json
 import os
+import re
 import select
 import subprocess
 import threading
@@ -17,11 +18,13 @@ For network debugging, vm_network_info gives you IPs, routes, DNS, and WireGuard
 exec_in_vm runs commands as the default user in the target VM.
 
 IMPORTANT constraints:
-- exec_in_vm, exec_in_vm_root, read_file_in_vm, and write_file_in_vm do NOT work on dom0/adminvm — the qrexec policy blocks it. Do not attempt to target dom0 with these tools.
+- Only VMs in the dom0-configured allowlist are reachable. Targeting any other VM returns a clear error from dom0 — do not retry; ask the operator to update the allowlist if needed.
+- list_vms only shows allowlisted VMs (with a trailing comment counting hidden ones).
+- exec_in_vm, exec_in_vm_root, read_file_in_vm, and write_file_in_vm do NOT work on dom0/adminvm — the qrexec policy blocks it.
 - These tools also cannot target 'salt-bridge' itself. Use local tools (Read, Write, Bash, Grep, Glob) for files in this VM.
 
 Dom0 policy management:
-- connect_tcp_policy can add/remove/list qubes.ConnectTCP rules in dom0. Use it when a VM needs TCP access to another VM via qrexec (e.g. SSH through qrexec-client-vm). This is the correct tool for managing those rules — do not ask the user to edit dom0 policy files manually.
+- connect_tcp_policy can add/remove/list qubes.ConnectTCP rules in dom0. Use it when a VM needs TCP access to another VM via qrexec (e.g. SSH through qrexec-client-vm). Both source and target must be in the allowlist. This is the correct tool for managing those rules — do not ask the user to edit dom0 policy files manually.
 """)
 
 QREXEC_TARGET = "dom0"
@@ -33,10 +36,17 @@ MAX_OUTPUT = 2 * 1024 * 1024  # 2MB cap — prevents OOM from large command outp
 # Bash, etc.) instead when operating on salt-bridge itself.
 _SELF_VM = "salt-bridge"
 
+_VM_NAME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9_-]*$")
 
-def _reject_self(vm_name: str, tool: str) -> str | None:
-    """Return an error string if vm_name targets the MCP server's own VM."""
-    if vm_name.lower() == _SELF_VM:
+
+def _preflight_vm(vm_name: str, tool: str) -> str | None:
+    """Return an error string if vm_name is unsafe or self-referential."""
+    if not _VM_NAME_RE.match(vm_name):
+        return f"ERROR: invalid VM name: {vm_name!r}"
+    lower = vm_name.lower()
+    if lower == "dom0":
+        return f"ERROR: {tool} cannot target 'dom0'"
+    if lower == _SELF_VM:
         return (
             f"ERROR: {tool} cannot target '{_SELF_VM}' — that is the VM this MCP "
             "server runs in. Use local tools (Read, Write, Bash, Grep, Glob) directly."
@@ -44,8 +54,12 @@ def _reject_self(vm_name: str, tool: str) -> str | None:
     return None
 
 
-def call_dom0(service: str, input_data: str = "", timeout: int = TIMEOUT) -> str:
-    """Call a qrexec service in dom0."""
+def call_dom0(service: str, input_data: str = "", timeout: int = TIMEOUT, service_argument: str | None = None) -> str:
+    """Call a qrexec service in dom0. service_argument (if set) is appended as `service+arg`."""
+    if service_argument is not None:
+        if not _VM_NAME_RE.match(service_argument):
+            return f"ERROR: invalid VM name: {service_argument!r}"
+        service = f"{service}+{service_argument}"
     try:
         proc = subprocess.Popen(
             ["qrexec-client-vm", QREXEC_TARGET, service],
@@ -119,87 +133,104 @@ def call_dom0(service: str, input_data: str = "", timeout: int = TIMEOUT) -> str
 
 @mcp.tool()
 def list_vms() -> str:
-    """List all Qubes VMs with name, state, type, netvm, IP, and label."""
+    """List Qubes VMs that are in the Salt Bridge allowlist (name, state, type, netvm, IP, label). Non-allowlisted VMs are hidden; the output ends with a '# N VM(s) hidden' comment when any are filtered out."""
     return call_dom0("saltbridge.VmList")
 
 
 @mcp.tool()
 def start_vm(vm_name: str) -> str:
-    """Start a Qubes VM."""
-    return call_dom0("saltbridge.VmStart", vm_name)
+    """Start a Qubes VM. The VM must be in the dom0 allowlist."""
+    if err := _preflight_vm(vm_name, "start_vm"):
+        return err
+    return call_dom0("saltbridge.VmStart", service_argument=vm_name)
 
 
 @mcp.tool()
 def shutdown_vm(vm_name: str) -> str:
-    """Gracefully shutdown a Qubes VM."""
-    return call_dom0("saltbridge.VmShutdown", vm_name)
+    """Gracefully shutdown a Qubes VM. The VM must be in the dom0 allowlist."""
+    if err := _preflight_vm(vm_name, "shutdown_vm"):
+        return err
+    return call_dom0("saltbridge.VmShutdown", service_argument=vm_name)
 
 
 @mcp.tool()
 def vm_network_info(vm_name: str) -> str:
-    """Get detailed network info for a VM: IPs, routes, DNS, interfaces, and WireGuard status."""
-    return call_dom0("saltbridge.VmNetworkInfo", vm_name, timeout=15)
+    """Get detailed network info for a VM: IPs, routes, DNS, interfaces, and WireGuard status. The VM must be in the dom0 allowlist."""
+    if err := _preflight_vm(vm_name, "vm_network_info"):
+        return err
+    return call_dom0("saltbridge.VmNetworkInfo", timeout=15, service_argument=vm_name)
 
 
 @mcp.tool()
 def exec_in_vm(vm_name: str, command: str, timeout_seconds: int = 30) -> str:
-    """Execute a shell command in a target VM as the default user. Returns combined stdout/stderr. dom0 is not a valid target — the policy blocks it."""
-    if err := _reject_self(vm_name, "exec_in_vm"):
+    """Execute a shell command in a target VM as the default user. Returns combined stdout/stderr. The VM must be in the dom0 allowlist; dom0 is never a valid target."""
+    if err := _preflight_vm(vm_name, "exec_in_vm"):
         return err
-    payload = json.dumps({"vm": vm_name, "cmd": command})
-    return call_dom0("saltbridge.VmExec", payload, timeout=timeout_seconds + 5)
+    payload = json.dumps({"cmd": command})
+    return call_dom0("saltbridge.VmExec", payload, timeout=timeout_seconds + 5, service_argument=vm_name)
 
 
 @mcp.tool()
 def exec_in_vm_root(vm_name: str, command: str, timeout_seconds: int = 30) -> str:
-    """Execute a shell command in a target VM as root. Use for template VMs or when sudo is unavailable. dom0 is not a valid target — the policy blocks it."""
-    if err := _reject_self(vm_name, "exec_in_vm_root"):
+    """Execute a shell command in a target VM as root. Use for template VMs or when sudo is unavailable. The VM must be in the dom0 allowlist; dom0 is never a valid target."""
+    if err := _preflight_vm(vm_name, "exec_in_vm_root"):
         return err
-    payload = json.dumps({"vm": vm_name, "cmd": command})
-    return call_dom0("saltbridge.VmExecRoot", payload, timeout=timeout_seconds + 5)
+    payload = json.dumps({"cmd": command})
+    return call_dom0("saltbridge.VmExecRoot", payload, timeout=timeout_seconds + 5, service_argument=vm_name)
 
 
 @mcp.tool()
 def read_file_in_vm(vm_name: str, file_path: str) -> str:
-    """Read a file from a target VM. dom0 is not a valid target — the policy blocks it."""
-    if err := _reject_self(vm_name, "read_file_in_vm"):
+    """Read a file from a target VM. The VM must be in the dom0 allowlist; dom0 is never a valid target."""
+    if err := _preflight_vm(vm_name, "read_file_in_vm"):
         return err
-    payload = json.dumps({"vm": vm_name, "path": file_path})
-    return call_dom0("saltbridge.VmReadFile", payload)
+    payload = json.dumps({"path": file_path})
+    return call_dom0("saltbridge.VmReadFile", payload, service_argument=vm_name)
 
 
 @mcp.tool()
 def write_file_in_vm(vm_name: str, file_path: str, content: str) -> str:
-    """Write content to a file in a target VM. Creates parent directories if needed. dom0 is not a valid target — the policy blocks it."""
-    if err := _reject_self(vm_name, "write_file_in_vm"):
+    """Write content to a file in a target VM. Creates parent directories if needed. The VM must be in the dom0 allowlist; dom0 is never a valid target."""
+    if err := _preflight_vm(vm_name, "write_file_in_vm"):
         return err
-    payload = json.dumps({"vm": vm_name, "path": file_path, "content": content})
-    return call_dom0("saltbridge.VmWriteFile", payload)
+    payload = json.dumps({"path": file_path, "content": content})
+    return call_dom0("saltbridge.VmWriteFile", payload, service_argument=vm_name)
 
 
 @mcp.tool()
 def firewall_list(vm_name: str) -> str:
-    """List all firewall rules for a VM."""
-    return call_dom0("saltbridge.FirewallList", vm_name)
+    """List all firewall rules for a VM. The VM must be in the dom0 allowlist."""
+    if err := _preflight_vm(vm_name, "firewall_list"):
+        return err
+    return call_dom0("saltbridge.FirewallList", service_argument=vm_name)
 
 
 @mcp.tool()
 def firewall_add(vm_name: str, action: str, args: str = "") -> str:
-    """Add a firewall rule to a VM. Action is 'accept' or 'drop'. Args are qvm-firewall parameters like 'dsthost=10.137.0.20 proto=tcp dstports=22'."""
-    payload = json.dumps({"vm": vm_name, "action": action, "args": args})
-    return call_dom0("saltbridge.FirewallAdd", payload)
+    """Add a firewall rule to a VM. Action is 'accept' or 'drop'. Args are qvm-firewall parameters like 'dsthost=10.137.0.20 proto=tcp dstports=22'. The VM must be in the dom0 allowlist."""
+    if err := _preflight_vm(vm_name, "firewall_add"):
+        return err
+    payload = json.dumps({"action": action, "args": args})
+    return call_dom0("saltbridge.FirewallAdd", payload, service_argument=vm_name)
 
 
 @mcp.tool()
 def firewall_remove(vm_name: str, rule_number: int) -> str:
-    """Remove a firewall rule from a VM by rule number. Use firewall_list to see rule numbers."""
-    payload = json.dumps({"vm": vm_name, "rule_number": rule_number})
-    return call_dom0("saltbridge.FirewallRemove", payload)
+    """Remove a firewall rule from a VM by rule number. Use firewall_list to see rule numbers. The VM must be in the dom0 allowlist."""
+    if err := _preflight_vm(vm_name, "firewall_remove"):
+        return err
+    payload = json.dumps({"rule_number": rule_number})
+    return call_dom0("saltbridge.FirewallRemove", payload, service_argument=vm_name)
 
 
 @mcp.tool()
 def connect_tcp_policy(action: str, source: str = "", target: str = "", port: int = 0) -> str:
-    """Manage qubes.ConnectTCP qrexec policy rules. Action: 'list', 'add', or 'remove'. For add/remove, specify source VM, target VM, and port."""
+    """Manage qubes.ConnectTCP qrexec policy rules. Action: 'list', 'add', or 'remove'. For add/remove, both source and target VMs must be in the dom0 allowlist."""
+    if action in ("add", "remove"):
+        if err := _preflight_vm(source, "connect_tcp_policy (source)"):
+            return err
+        if err := _preflight_vm(target, "connect_tcp_policy (target)"):
+            return err
     payload = json.dumps({"action": action, "source": source, "target": target, "port": port})
     return call_dom0("saltbridge.ConnectTcpPolicy", payload)
 

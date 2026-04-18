@@ -1,2 +1,30 @@
 #!/bin/bash
-exec qvm-ls --raw-data --fields=name,state,class,netvm,ip,label 2>&1
+source /etc/qubes-rpc/saltbridge.lib.sh
+
+if [[ ! -f "$SB_ALLOWLIST" || -L "$SB_ALLOWLIST" ]]; then
+    sb_log_deny "allowlist missing or is symlink; VmList failing closed"
+    echo "ERROR: Salt Bridge allowlist is not installed or is invalid" >&2
+    exit 1
+fi
+
+qvm-ls --raw-data --fields=name,state,class,netvm,ip,label 2>&1 | awk -F'|' -v allowlist_file="$SB_ALLOWLIST" '
+BEGIN {
+    while ((getline line < allowlist_file) > 0) {
+        if (line != "") allowed[line] = 1
+    }
+    close(allowlist_file)
+}
+{
+    # Filter pipe-separated VM rows by allowlist; pass through any
+    # error/warning lines unchanged.
+    if (NF >= 2 && $1 ~ /^[a-zA-Z][a-zA-Z0-9_-]*$/) {
+        if ($1 in allowed) print
+        else hidden++
+    } else {
+        print
+    }
+}
+END {
+    if (hidden > 0) print "# " hidden " VM(s) hidden by Salt Bridge allowlist"
+}
+'

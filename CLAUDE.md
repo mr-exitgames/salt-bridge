@@ -8,6 +8,8 @@ This is the Salt Bridge MCP server for Qubes OS. It runs in a dedicated, privile
 - dom0 qrexec services live in `dom0-setup/qubes-rpc/`. They are shell scripts that wrap `qvm-run`, `qvm-firewall`, etc.
 - dom0 policy in `dom0-setup/policy.d/30-salt-bridge.policy` controls which VM(s) can call the services.
 - The dom0 installer (`dom0-install.sh`) must be run in two steps due to stdin conflicts when piping through `qvm-run`.
+- Target VM for single-target services is passed as the qrexec argument (`saltbridge.VmExec+<vm>`), not in the JSON payload. `call_dom0` in `server.py` appends `+<vm>` via its `service_argument` parameter.
+- `/etc/qubes/salt-bridge-allowed-vms` is the dom0 allowlist; every service script (via `saltbridge.lib.sh`) fails closed if a target isn't in it. The installer replaces the allowlist + policy wholesale on each run.
 
 ## Key constraints
 
