@@ -160,6 +160,7 @@ The installer:
 - Writes `/etc/qubes/salt-bridge-allowed-vms` with the target VMs (one per line)
 - Generates `/etc/qubes/policy.d/30-salt-bridge.policy` with one `allow` line per (service × target) pair and explicit `deny` catch-alls
 - **Replaces the allowlist and policy wholesale on each run** — re-invoke with the new complete list to change which VMs are reachable
+- Drops a **self-contained updater** at `$PWD/salt-bridge-update.sh` with all service files embedded (base64) — future reinstalls/allowlist changes can be run entirely from dom0 without touching the agent VM
 
 ### Step 3: Restart Claude Code
 
@@ -196,7 +197,16 @@ salt-bridge/
 
 ## Updating
 
-After modifying qrexec services, the installer, or the policy generator, re-run the dom0 installer with your current agent + target VMs:
+**Allowlist changes / reinstalling without code changes** — use the self-contained updater dropped into dom0's working directory by the last install:
+
+```bash
+# In dom0 (no agent VM required):
+bash ./salt-bridge-update.sh salt-bridge work dev test
+```
+
+The updater embeds all service files as base64 at generation time, so the agent VM does not need to be running. It reuses the same allowlist + policy generation logic as the bootstrap installer and replaces both wholesale on each run.
+
+**Upgrading to new salt-bridge code** — after modifying qrexec services, the installer, or the policy generator, re-run the bootstrap installer from the agent VM so the new files get pulled in (this also regenerates `salt-bridge-update.sh` with the updated embedded copies):
 
 ```bash
 # In dom0:
@@ -211,8 +221,8 @@ After modifying `server.py`, restart Claude Code to reload the MCP server.
 To add or remove VMs that the agent can manage, re-run the installer with the **new complete list** of targets:
 
 ```bash
-# Switch the allowlist from (work dev test) to (work prod):
-bash /tmp/sb-install.sh salt-bridge work prod
+# Switch the allowlist from (work dev test) to (work prod) — no agent VM needed:
+bash ./salt-bridge-update.sh salt-bridge work prod
 ```
 
 The installer replaces `/etc/qubes/salt-bridge-allowed-vms` and `/etc/qubes/policy.d/30-salt-bridge.policy` wholesale on every run — there is no append mode. VMs dropped from the list become unreachable immediately: first the qrexec policy engine denies the call (no `+<vm>` allow line), then the service script's fail-closed allowlist check catches anything that slips past.
