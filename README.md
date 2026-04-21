@@ -1,7 +1,9 @@
 # Salt Bridge
 
 **An MCP server that gives an agent full cross-VM management of a [Qubes OS](https://www.qubes-os.org/) system — command execution, file I/O, firewall rules, and network policy — all through dom0 qrexec, bounded by an explicit dom0-enforced VM allowlist.**
+
 Also check out [Calcium Channel](https://github.com/mr-exitgames/calcium-channel) — a sibling project for Qubes MCP isolation.
+
 
 > [!WARNING]
 > ## Salt Bridge narrows Qubes isolation by design.
