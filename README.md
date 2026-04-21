@@ -1,6 +1,7 @@
 # Salt Bridge
 
 **An MCP server that gives an agent full cross-VM management of a [Qubes OS](https://www.qubes-os.org/) system — command execution, file I/O, firewall rules, and network policy — all through dom0 qrexec, bounded by an explicit dom0-enforced VM allowlist.**
+Also check out [Calcium Channel](https://github.com/mr-exitgames/calcium-channel) — a sibling project for Qubes MCP isolation.
 
 > [!WARNING]
 > ## Salt Bridge narrows Qubes isolation by design.
@@ -13,9 +14,9 @@
 > - There are no per-command prompts; trust the allowlist, not the individual call
 > - Bugs in Salt Bridge itself (service scripts, policy generation, input validation) could widen that reach — this is new code, treat it accordingly
 >
-> **Good fits:** Qubes development machines, lab/experimentation setups, and admin workstations where the convenience of cross-VM tooling is worth the narrowed boundary — provided sensitive VMs are left off the allowlist.
+> **Uses:** Qubes development machines, lab/experimentation setups, Qubes learning environments, and admin workstations where the convenience of cross-VM tooling is worth the narrowed boundary
 >
-> **Keep sensitive VMs and TemplateVMs off the allowlist** — VMs holding credentials, keys, confidential documents, or wallets should not be reachable by the agent, and templates shouldn't be either (a compromised template propagates to every AppVM built from it). If you need AI-assisted cross-VM tooling *without* narrowing isolation at all, see [Calcium Channel](https://github.com/mr-exitgames/calcium-channel) — a least-privilege MCP-over-qrexec mesh with per-server ACLs that strengthens Qubes isolation rather than narrowing it.
+> **Isolate sensitive VMs/Templates** — VMs holding credentials, keys, confidential documents, or wallets should not be reachable by the agent, and templates shouldn't be either (a compromised template propagates to every AppVM built from it). 
 
 ## How It Works
 
