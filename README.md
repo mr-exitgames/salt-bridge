@@ -2,22 +2,20 @@
 
 **An MCP server that gives an agent full cross-VM management of a [Qubes OS](https://www.qubes-os.org/) system — command execution, file I/O, firewall rules, and network policy — all through dom0 qrexec, bounded by an explicit dom0-enforced VM allowlist.**
 
-> [!CAUTION]
-> ## This tool fundamentally breaks the Qubes OS security model.
+> [!WARNING]
+> ## Salt Bridge narrows Qubes isolation by design.
 >
-> Qubes OS achieves security through **isolation** — each VM is a compartment, and no single VM can reach into another. Salt Bridge **deliberately narrows that boundary** by granting one VM the ability to execute commands, read/write files, and modify firewall rules across an admin-configured set of other VMs on the system.
+> Qubes OS achieves security through **isolation** — each VM is a compartment, and no single VM can reach into another. Salt Bridge grants one agent VM the ability to execute commands, read/write files, and modify firewall rules across an admin-configured set of allowlisted target VMs. The dom0-enforced allowlist bounds the reach, but everything inside that set is within the agent's authority.
 >
 > **What this means in practice:**
-> - A compromise of the salt-bridge AppVM = full compromise of every VM in its allowlist
-> - Any MCP client bug, prompt injection, or supply-chain attack in that VM has dom0-equivalent reach over the allowlisted VMs
-> - The dom0 allowlist bounds the blast radius, but the agent can still do anything within it — there are no per-command prompts
+> - A compromise of the salt-bridge AppVM = compromise of every VM in its allowlist (and nothing outside it)
+> - Prompt injection or an MCP client bug in the agent VM has the same reach — keep the allowlist small and exclude anything sensitive
+> - There are no per-command prompts; trust the allowlist, not the individual call
+> - Bugs in Salt Bridge itself (service scripts, policy generation, input validation) could widen that reach — this is new code, treat it accordingly
 >
-> **Salt Bridge is a development and administration tool.** It is designed for:
-> - Qubes development machines where you are building/testing Qubes itself
-> - Lab and experimentation environments
-> - Machines where convenience outweighs compartmentalization
+> **Good fits:** Qubes development machines, lab/experimentation setups, and admin workstations where the convenience of cross-VM tooling is worth the narrowed boundary — provided sensitive VMs are left off the allowlist.
 >
-> **Do NOT install Salt Bridge on a Qubes system that holds sensitive data** — personal credentials, private keys, confidential documents, cryptocurrency wallets, or anything you rely on Qubes isolation to protect. If you need AI-assisted cross-VM tooling *with* isolation guarantees, see [Calcium Channel](https://github.com/mr-exitgames/calcium-channel) — a least-privilege MCP-over-qrexec mesh that routes MCP connections between isolated VMs with per-server ACLs, strengthening Qubes isolation rather than bypassing it.
+> **Keep sensitive VMs and TemplateVMs off the allowlist** — VMs holding credentials, keys, confidential documents, or wallets should not be reachable by the agent, and templates shouldn't be either (a compromised template propagates to every AppVM built from it). If you need AI-assisted cross-VM tooling *without* narrowing isolation at all, see [Calcium Channel](https://github.com/mr-exitgames/calcium-channel) — a least-privilege MCP-over-qrexec mesh with per-server ACLs that strengthens Qubes isolation rather than narrowing it.
 
 ## How It Works
 
